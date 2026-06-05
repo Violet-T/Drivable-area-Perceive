@@ -43,3 +43,5 @@ weights/**/*.onnx
 *.log
 *.tmp
 tmp/
+src/YOLOP/external/YOLOP/
+src/SEA_RAFT/external/SEA_RAFT/
