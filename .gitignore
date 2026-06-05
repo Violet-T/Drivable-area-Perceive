@@ -1,0 +1,45 @@
+# Local credentials
+.cityscapes_cookies.txt
+*.cookies
+*.netrc
+
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Datasets and generated outputs
+data/*
+!data/README.md
+!data/.gitkeep
+output/*
+!output/README.md
+!output/.gitkeep
+
+# Large model checkpoints
+weights/**/*.pth
+weights/**/*.pt
+weights/**/*.pth.tar
+weights/**/*.onnx
+!weights/README.md
+!weights/**/.gitkeep
+
+
+# Editor / OS files
+.vscode/
+.idea/
+.DS_Store
+
+# Logs and temporary files
+*.log
+*.tmp
+tmp/

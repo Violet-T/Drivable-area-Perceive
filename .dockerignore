@@ -1,0 +1,10 @@
+build/
+install/
+log/
+**/.git/
+**/__pycache__/
+**/*.pyc
+*.bag
+*.db3
+datasets/
+weights/
