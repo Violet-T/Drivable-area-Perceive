@@ -1,4 +1,4 @@
-{
+git rm --cached SEA-RAFT{
   "data_mode": "cityscapes_sequence_bootstrap",
   "train_size": 64,
   "val_size": 32,
