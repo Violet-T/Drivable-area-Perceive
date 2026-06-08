@@ -26,13 +26,13 @@ output/*
 !output/.gitkeep
 
 # Large model checkpoints
-weights/*
-!weights/README.md
-!weights/.gitkeep
-weights/**/*.pth
-weights/**/*.pt
-weights/**/*.pth.tar
-weights/**/*.onnx
+# weights/*
+# !weights/README.md
+# !weights/.gitkeep
+# weights/**/*.pth
+# weights/**/*.pt
+# weights/**/*.pth.tar
+# weights/**/*.onnx
 
 
 # Editor / OS files
@@ -44,5 +44,4 @@ weights/**/*.onnx
 *.log
 *.tmp
 tmp/
-src/YOLOP/external/YOLOP/
-src/SEA_RAFT/external/SEA_RAFT/
+

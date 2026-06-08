@@ -1,0 +1,40 @@
+{
+  "data_mode": "precomputed_csv",
+  "train_size": 2,
+  "val_size": 1,
+  "test_size": 1,
+  "free_label_ids": [
+    7
+  ],
+  "best_val_iou": 0.8727573752403259,
+  "args": {
+    "data_root": "/workspace/data",
+    "cityscapes_root": "/workspace/data/cityscapes",
+    "sample_list": "/workspace/data/stgru_samples_smoke/train.csv",
+    "val_sample_list": "/workspace/data/stgru_samples_smoke/val.csv",
+    "test_sample_list": "/workspace/data/stgru_samples_smoke/test.csv",
+    "output_dir": "/workspace/weights/STGRU_precompute_smoke",
+    "checkpoint": "",
+    "train_split": "train",
+    "val_split": "val",
+    "free_label_ids": "7",
+    "target_is_cityscapes_label": false,
+    "previous_frame_offset": 1,
+    "image_width": 960,
+    "image_height": 540,
+    "epochs": 1,
+    "batch_size": 2,
+    "lr": 0.0001,
+    "weight_decay": 1e-05,
+    "dice_weight": 0.5,
+    "hidden_channels": 16,
+    "num_workers": 0,
+    "max_train_samples": 0,
+    "max_val_samples": 0,
+    "max_test_samples": 0,
+    "device": "cuda",
+    "amp": true,
+    "seed": 42,
+    "save_name": "stgru_best.pth"
+  }
+}
