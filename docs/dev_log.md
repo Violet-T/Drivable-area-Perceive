@@ -1755,3 +1755,315 @@
 ### Known Issues
 
 - 第三方官方仓库仍默认被 `.gitignore` 忽略；若后续希望 Git 追踪外部仓库版本，应改为 submodule 或在文档中固定 clone commit。
+
+## 2026-06-05
+
+### Modified Module
+
+- STGRU
+- YOLOP
+- SEA-RAFT
+- Temporal Fusion
+- Pipeline
+
+### Changes
+
+- 新增 `src/STGRU/stgru_module.py`，完成 STGRU 的基础结构设计：
+  - `STGRUCell` 使用当前 YOLOP mask、warp 后历史 mask、图像光度误差计算 reset gate / update gate。
+  - `STGRUFusionModule` 提供 numpy 输入输出接口，方便和 YOLOP、SEA-RAFT 在同一进程中通过变量通信。
+- 新增统一大融合入口：
+  - `src/utils/pipeline/freespace_temporal_pipeline.py`
+  - `src/utils/scripts/run_freespace_pipeline.py`
+- 将流程改为同一 Python 进程内实例化三个模块：
+  - YOLOP 输出当前帧 free-space mask。
+  - SEA-RAFT 输出相邻帧 optical flow。
+  - Temporal / STGRU 根据 flow warp 历史 mask 并融合。
+- 新增 `src/utils/temporal/warp_image.py`，用于将上一帧 RGB 图像按 flow 对齐到当前帧，给 STGRU 计算光度误差。
+- 修正 SEA-RAFT wrapper 和项目级 `utils` 包的同名导入冲突，避免修改 SEA-RAFT 官方源码。
+- 更新 `Run.sh`，默认调用统一 pipeline，当前默认仍使用 `alpha` 融合；`stgru` 模式可通过参数开启。
+
+### Reason
+
+- 用户要求先完成 STGRU 结构设计，再进行 YOLOP、SEA-RAFT、STGRU 的大融合。
+- 当前阶段重点是建立清晰的模块边界和内存通信方式，而不是继续通过文件中转 mask / flow。
+- STGRU 目前没有训练权重，因此需要先完成可训练、可替换 checkpoint 的结构，再进入训练和实验对齐阶段。
+
+### Result
+
+- 已完成统一流程：
+  - `RGB frame -> YOLOP mask -> SEA-RAFT flow -> history warp -> alpha/STGRU fusion -> visualization frames / arrays`
+- Docker 内完成验证：
+  - `run_freespace_pipeline.py --help` 通过。
+  - `fusion-mode alpha` 使用 `eg.mp4` 处理 2 帧 smoke test 通过。
+  - `fusion-mode stgru` 使用未训练 STGRU 处理 2 帧 smoke test 通过。
+- 当前 smoke test 输出：
+  - `output/pipeline_alpha_smoke/`
+  - `output/pipeline_stgru_smoke/`
+
+### Known Issues
+
+- STGRU 目前只是结构实现，未训练 checkpoint 下的输出只能用于链路验证，不能用于论文结论或性能比较。
+- SEA-RAFT 在过小分辨率下会因为特征金字塔下采样失败，建议当前统一使用 `960x540` 或更高分辨率进行测试。
+- 下一步需要准备连续帧训练数据和 free-space 标签，训练 STGRU 的 gate，使其学习何时信任当前 YOLOP，何时信任 warp 后历史结果。
+
+## 2026-06-05
+
+### Modified Module
+
+- STGRU
+- Training
+- Documentation
+
+### Changes
+
+- 新增 `src/STGRU/train_stgru.py`，作为 STGRU 训练入口。
+- 训练输入默认从工作目录 `data/` 读取：
+  - Cityscapes bootstrap：`data/cityscapes/`
+  - 预计算真实样本：`data/stgru_samples/*.csv`
+- 训练权重默认输出到：
+  - `weights/STGRU/stgru_best.pth`
+  - `weights/STGRU/stgru_latest.pth`
+- 支持两种训练模式：
+  - 使用 `leftImg8bit_sequence + gtFine` 生成结构预训练/调试样本。
+  - 使用预计算 YOLOP mask、SEA-RAFT warped mask、target mask 的 CSV 进行正式训练。
+- 更新 `src/STGRU/README.md`，补充训练数据目录、命令和 CSV 字段说明。
+
+### Reason
+
+- STGRU 已经完成结构设计，但需要训练入口才能从未训练 gate 进入可验证模型。
+- 正式实验需要让 STGRU 学习真实 YOLOP 单帧误差和 SEA-RAFT warp 历史结果之间的取舍，而不是只依赖手工 alpha。
+
+### Result
+
+- Docker 容器内验证：
+  - `python3 src/STGRU/train_stgru.py --help` 通过。
+  - 使用 `/tmp` 构造的 4 个小型预计算样本完成 1 epoch smoke test。
+  - smoke test 成功输出 best/latest checkpoint 和 `training_log.csv`。
+
+### Known Issues
+
+- Cityscapes bootstrap 模式只有第 19 帧 gtFine 真值，脚本会合成 YOLOP-like 当前 mask 和历史 mask，适合结构预训练或调试，不适合作为最终论文性能结论。
+- 正式训练建议先用当前 YOLOP + SEA-RAFT pipeline 生成真实 `current_mask / warped_mask / target_mask` CSV，再训练 STGRU。
+
+## 2026-06-07
+
+### Modified Module
+
+- STGRU
+- Training Workflow
+
+### Changes
+
+- 新增 `Run_STGRU.sh`，用于只运行 STGRU 训练，不触发 YOLOP、SEA-RAFT 或完整融合流程。
+- `Run_STGRU.sh smoke` 默认使用少量样本、低分辨率进行训练链路检查。
+- `Run_STGRU.sh train` 默认使用 `960x540` 和完整 Cityscapes bootstrap 数据进行 STGRU 训练。
+- 当前训练输入固定为：
+  - `/workspace/data/cityscapes`
+- 当前训练输出固定为：
+  - `/workspace/weights/STGRU_smoke`
+  - `/workspace/weights/STGRU`
+
+### Reason
+
+- 当前阶段先聚焦 STGRU 训练，避免 YOLOP / SEA-RAFT 推理耗时干扰训练脚本和数据路径调试。
+- 先通过 smoke test 验证数据结构、CUDA、loss 和 checkpoint 写入，再进入完整训练。
+
+### Result
+
+- 已检查当前数据：
+  - `gtFine/train` 有 2975 个 `labelIds`
+  - `gtFine/val` 有 500 个 `labelIds`
+  - `leftImg8bit_sequence/train` 当前有 2880 张连续帧
+  - `leftImg8bit_sequence/val` 当前没有连续帧
+- `Run_STGRU.sh` shell 语法检查通过。
+
+### Known Issues
+
+- 当前没有运行中的 `perceive` Docker 容器，因此未直接启动训练。
+- 当前 sequence 只有 train/bochum 子集，val 侧会回退到普通 `leftImg8bit`，适合先训练结构，不适合作为最终严格时序验证。
+
+## 2026-06-07
+
+### Modified Module
+
+- STGRU
+- Training
+
+### Changes
+
+- 修复 `train_stgru.py` 在 `--amp` 模式下的 loss 计算问题。
+- 原因是 PyTorch 不允许在 autocast 区域内对概率值直接调用 `binary_cross_entropy`。
+- 当前处理方式：
+  - STGRU forward 仍可使用 AMP。
+  - BCE / Dice loss 统一切回 FP32 计算。
+
+### Reason
+
+- 保持 4060 等显卡上训练时的 AMP 加速和显存节省。
+- 避免将 STGRU 输出结构改成 logits，减少对现有推理接口的影响。
+
+### Result
+
+- 已运行 `./Run_STGRU.sh smoke`。
+- smoke test 成功完成：
+  - train: 64 samples, 1 epoch
+  - val: 32 samples
+  - 输出 `weights/STGRU_smoke/stgru_best.pth`
+  - 输出 `weights/STGRU_smoke/stgru_latest.pth`
+  - 输出 `weights/STGRU_smoke/training_log.csv`
+
+### Known Issues
+
+- smoke 只验证训练链路，不代表模型效果。
+- 当前 bootstrap 数据仍是合成 YOLOP-like mask，正式训练应使用真实 YOLOP + SEA-RAFT 预计算样本。
+
+## 2026-06-07
+
+### Modified Module
+
+- STGRU
+- Cityscapes Preprocessing
+- Training
+- Evaluation
+- Visualization
+
+### Changes
+
+- 新增 `src/STGRU/prepare_cityscapes_binary.py`：
+  - 将 Cityscapes 多类别 `labelIds` 转换为二值 free-space mask。
+  - 当前默认 `labelId=7` 作为 road / free-space。
+- 新增 `src/STGRU/precompute_stgru_samples.py`：
+  - 批量生成 STGRU 训练需要的真实输入。
+  - 输入包括 `current_mask`、`warped_mask`、`target_mask`、`photometric_error`、`flow`、`warped_image`。
+  - `current_mask` 和 `previous_mask` 来自 YOLOP。
+  - `flow` 来自 SEA-RAFT。
+  - `warped_mask` 由 previous YOLOP mask 经 SEA-RAFT flow warp 得到。
+- 更新 `src/STGRU/train_stgru.py`：
+  - 支持 `--test-sample-list`。
+  - 训练完成后自动输出 val/test 的 IoU、Precision、Recall、F1、Accuracy。
+- 新增 `src/STGRU/run_stgru_video.py`：
+  - 使用训练后的 STGRU checkpoint 对视频输出 fused mask 和 overlay 视频。
+- 更新 `Run_STGRU.sh`：
+  - 新增 `precompute-smoke`
+  - 新增 `precompute`
+  - 新增 `train-precomputed-smoke`
+  - 新增 `train-precomputed`
+  - 新增 `video`
+
+### Reason
+
+- 贴近论文主线：固定 YOLOP 和 SEA-RAFT，预计算单帧语义结果和光流对齐结果，只训练 STGRU 时序融合模块。
+- Cityscapes 原始标签是多类别语义标签，STGRU 当前任务是二值 free-space，因此需要在训练前显式转换类别定义。
+
+### Result
+
+- 已生成 Cityscapes 二值标签：
+  - `data/cityscapes_binary/`
+  - 共 5000 张 binary mask。
+- 已完成真实预计算 smoke：
+  - `data/stgru_samples_smoke/train.csv`：2 samples
+  - `data/stgru_samples_smoke/val.csv`：1 sample
+  - `data/stgru_samples_smoke/test.csv`：1 sample
+- 已完成预计算样本训练 smoke：
+  - `weights/STGRU_precompute_smoke/stgru_best.pth`
+  - `weights/STGRU_precompute_smoke/stgru_latest.pth`
+  - `weights/STGRU_precompute_smoke/training_log.csv`
+  - `weights/STGRU_precompute_smoke/evaluation_summary.csv`
+- smoke 指标：
+  - val IoU: 0.8749
+  - val F1: 0.9333
+  - test IoU: 0.0
+  - test Accuracy: 0.6262
+- 已导出 STGRU 视频 smoke：
+  - `output/stgru_video_smoke/stgru_mask.mp4`
+  - `output/stgru_video_smoke/stgru_overlay.mp4`
+  - `output/stgru_video_smoke/stgru_mask_h264.mp4`
+  - `output/stgru_video_smoke/stgru_overlay_h264.mp4`
+
+### Known Issues
+
+- 当前没有发现 `data/demo/1.mp4`，视频导出脚本回退使用了 `data/demo/eg.mp4`。
+- 当前 train 真实时序样本来自已有的 `leftImg8bit_sequence/train/bochum` 子集。
+- 当前 val/test 没有 sequence，预计算脚本回退使用同帧图像，适合链路验证，不适合最终时序性能结论。
+- test smoke 只有 1 个样本，且当前指标不代表模型真实性能。
+
+## 2026-06-07
+
+### Modified Module
+
+- STGRU
+- Visualization
+
+### Changes
+
+- 使用 YOLOP 官方仓库自带原始视频运行 STGRU demo：
+  - `src/YOLOP/external/YOLOP/inference/videos/1.mp4`
+- 输出 STGRU fused mask 视频和 overlay 视频。
+- 额外转码 H.264 / yuv420p 版本，避免播放器兼容问题。
+
+### Reason
+
+- 用户要求在 YOLOP demo 的 `1.mp4` 上输出结果。
+- 之前查找视频时排除了 `external` 目录，导致误用 `data/demo/eg.mp4` 作为回退输入。
+
+### Result
+
+- 输出目录：
+  - `output/yolop_1mp4_stgru_demo/`
+- 输出文件：
+  - `stgru_mask.mp4`
+  - `stgru_overlay.mp4`
+  - `stgru_mask_h264.mp4`
+  - `stgru_overlay_h264.mp4`
+
+### Known Issues
+
+- 当前使用的是 `weights/STGRU_precompute_smoke/stgru_best.pth`，只是链路验证权重，不代表最终 STGRU 效果。
+
+## 2026-06-07
+
+### Modified Module
+
+- STGRU
+- Temporal Fusion
+- Visualization
+
+### Changes
+
+- 修复 STGRU fused mask 大面积铺满画面的错误。
+- `STGRUCell` 不再对已经是概率的融合结果再次 `softmax`。
+- `STGRUFusionModule` 新增 no-hallucination 约束：
+  - fused free-space 不能超过当前 YOLOP mask 和 warped history mask 提供的支持上界。
+  - 当前帧高置信 non-free 区域仍保持当前 YOLOP 结果。
+  - `support_margin` 只加在当前帧支持上，不重复加到 recurrent history 上，避免背景概率逐帧漂移到 0.5 以上。
+- 重新使用 YOLOP 官方 `1.mp4` 输出修正版 STGRU demo。
+
+### Reason
+
+- 原错误不是 SEA-RAFT 凭空生成 mask，而是 STGRU 融合层允许未被当前帧或历史帧支持的区域被输出为 free-space。
+- 旧实现把概率再次作为 logits 做 `softmax`，会把低置信背景区域推向 0.5。
+- 错误 fused mask 被写入 temporal buffer 后，下一帧又作为 warped history 输入，导致错误被递归传播。
+
+### Result
+
+- 修复前前几帧统计：
+  - frame 2 fused `>=0.5` 像素比例约 0.9793。
+  - frame 3 fused `>=0.5` 像素比例约 0.9923。
+- 修复后 30 帧统计：
+  - frame 0 fused `>=0.5` 比例约 0.1467。
+  - frame 10 fused `>=0.5` 比例约 0.1490。
+  - frame 29 fused `>=0.5` 比例约 0.1700。
+- 修正版视频输出：
+  - `output/yolop_1mp4_stgru_demo_fixed/stgru_mask_h264.mp4`
+  - `output/yolop_1mp4_stgru_demo_fixed/stgru_overlay_h264.mp4`
+- 修正版视频抽样 mask 面积比例：
+  - frame 0: 0.1463
+  - frame 50: 0.1717
+  - frame 100: 0.1926
+  - frame 150: 0.2217
+  - frame 266: 0.2025
+
+### Known Issues
+
+- 当前仍使用 smoke 训练权重，视频只能证明“不会再凭空铺满全图”，不能证明 STGRU 已经达到最终效果。
+- 后续正式训练需要用完整 sequence train/val/test 预计算样本重新训练 STGRU。

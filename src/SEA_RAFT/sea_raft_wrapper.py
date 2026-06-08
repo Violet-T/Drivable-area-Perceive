@@ -47,10 +47,18 @@ class SEARAFTWrapper:
 
     def _load_model(self) -> torch.nn.Module:
         core_path = self.sea_raft_repo / "core"
+        previous_utils = sys.modules.pop("utils", None)
+        previous_utils_utils = sys.modules.pop("utils.utils", None)
         sys.path.insert(0, str(self.sea_raft_repo))
         sys.path.insert(0, str(core_path))
-        from raft import RAFT  # pylint: disable=import-error,import-outside-toplevel
-        from utils.utils import load_ckpt  # pylint: disable=import-error,import-outside-toplevel
+        try:
+            from raft import RAFT  # pylint: disable=import-error,import-outside-toplevel
+            from utils.utils import load_ckpt  # pylint: disable=import-error,import-outside-toplevel
+        finally:
+            if previous_utils is not None:
+                sys.modules["utils"] = previous_utils
+            if previous_utils_utils is not None:
+                sys.modules["utils.utils"] = previous_utils_utils
 
         if self.checkpoint_path is not None:
             model = RAFT(self.args)
