@@ -1,7 +1,8 @@
 docker exec perceive bash -lc '
-cd /workspace && python3 src/SEA_RAFT/run_yolop_temporal_fusion.py \
+cd /workspace && python3 src/utils/scripts/run_freespace_pipeline.py \
   --input-video /workspace/data/demo/eg.mp4 \
-  --output-dir /workspace/output/yolop_eg_temporal \
+  --output-dir /workspace/output/freespace_pipeline_alpha \
+  --fusion-mode alpha \
   --alpha 0.7 \
   --non-free-threshold 0.2 \
   --history-size 3 \
