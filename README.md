@@ -164,7 +164,7 @@ weights/YOLOP/End-to-end.pth
 weights/SEA-RAFT/Tartan-C-T-TSKH-spring540x960-M.pth
 ```
 
-By default, BDD100K precompute uses the Hugging Face SEA-RAFT `spring-S` model URL. To force the local `spring-M` checkpoint:
+By default, BDD100K precompute uses the local SEA-RAFT `spring-M` checkpoint committed under `weights/SEA-RAFT`, so smoke tests do not depend on Hugging Face downloads:
 
 ```bash
 SEA_RAFT_CONFIG=src/SEA_RAFT/external/SEA-RAFT/config/eval/spring-M.json \
@@ -172,3 +172,5 @@ SEA_RAFT_CHECKPOINT=weights/SEA-RAFT/Tartan-C-T-TSKH-spring540x960-M.pth \
 SEA_RAFT_URL= \
 ./Run_BDD100K_STGRU.sh precompute
 ```
+
+Only set `SEA_RAFT_CHECKPOINT=` and `SEA_RAFT_URL=...` when you intentionally want to load SEA-RAFT from Hugging Face.

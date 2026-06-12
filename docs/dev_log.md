@@ -2665,3 +2665,36 @@
 ### Known Issues
 
 - 如果云平台禁止联网安装 pip 包，需要手动上传对应 wheel 或更换预装 OpenCV 的镜像。
+
+## 2026-06-12
+
+### Modified Module
+
+- SEA-RAFT
+- BDD100K STGRU
+- Cityscapes STGRU
+- Documentation
+
+### Changes
+
+- 将 `Run_BDD100K_STGRU.sh` 默认 SEA-RAFT 配置从 Hugging Face `spring-S` 改为本地 `spring-M` checkpoint：
+  - config：`src/SEA_RAFT/external/SEA-RAFT/config/eval/spring-M.json`
+  - checkpoint：`weights/SEA-RAFT/Tartan-C-T-TSKH-spring540x960-M.pth`
+  - URL：默认空
+- 将 `Run_Cityscapes_STGRU.sh`、`precompute_bdd100k_stgru_samples.py`、`precompute_stgru_samples.py` 同步改为默认本地 checkpoint。
+- 在 `sea_raft_wrapper.py` 中为 Hugging Face 加载失败增加更明确的错误提示。
+- 更新远程训练文档和 README，说明默认离线使用本地 SEA-RAFT 权重。
+
+### Reason
+
+- 云平台 smoke 阶段通过 Hugging Face 在线加载 SEA-RAFT 时出现 `RuntimeError: Cannot send a request, as the client has been closed`。
+- 该问题属于 Hugging Face 下载链路/网络/版本兼容问题，不应阻塞本地已有 checkpoint 的 smoke 验证。
+
+### Result
+
+- BDD100K 和 Cityscapes STGRU 预计算默认不再访问 Hugging Face。
+- `bash -n` 和相关 Python 编译检查通过。
+
+### Known Issues
+
+- 如果手动设置 `SEA_RAFT_CHECKPOINT=` 且指定 `SEA_RAFT_URL`，仍会依赖 Hugging Face 网络环境。

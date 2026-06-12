@@ -24,9 +24,9 @@ BDD_DRIVABLE_ROOT="${BDD_DRIVABLE_ROOT:-data/bdd100k_drivable_maps}"
 BDD_DRIVABLE_VALUES="${BDD_DRIVABLE_VALUES:-1,2}"
 SKIP_REMOTE_LABEL_SELECTION="${SKIP_REMOTE_LABEL_SELECTION:-1}"
 YOLOP_CHECKPOINT="${YOLOP_CHECKPOINT:-weights/YOLOP/End-to-end.pth}"
-SEA_RAFT_CONFIG="${SEA_RAFT_CONFIG:-src/SEA_RAFT/external/SEA-RAFT/config/eval/spring-S.json}"
-SEA_RAFT_CHECKPOINT="${SEA_RAFT_CHECKPOINT:-}"
-SEA_RAFT_URL="${SEA_RAFT_URL:-MemorySlices/Tartan-C-T-TSKH-spring540x960-S}"
+SEA_RAFT_CONFIG="${SEA_RAFT_CONFIG:-src/SEA_RAFT/external/SEA-RAFT/config/eval/spring-M.json}"
+SEA_RAFT_CHECKPOINT="${SEA_RAFT_CHECKPOINT:-weights/SEA-RAFT/Tartan-C-T-TSKH-spring540x960-M.pth}"
+SEA_RAFT_URL="${SEA_RAFT_URL:-}"
 
 # Examples:
 #   COOKIE_ARGS="--cookie-file /workspace/.bdd100k_cookies.txt"

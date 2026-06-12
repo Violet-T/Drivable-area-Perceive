@@ -205,24 +205,28 @@ data/bdd100k_drivable_maps/
 rsync -avP data/bdd100k_drivable_maps <user>@<server_ip>:~/workspace/perceive/data/
 ```
 
-SEA-RAFT 默认仍使用 Hugging Face 的 `spring-S` 模型，便于保持当前 smoke 结果一致：
+SEA-RAFT 默认使用 Git 中的本地 `spring-M` 权重，避免云平台 smoke 阶段依赖 Hugging Face 网络下载：
 
 ```text
-MemorySlices/Tartan-C-T-TSKH-spring540x960-S
+weights/SEA-RAFT/Tartan-C-T-TSKH-spring540x960-M.pth
+src/SEA_RAFT/external/SEA-RAFT/config/eval/spring-M.json
 ```
 
-如遇到 Hugging Face 限速，可在容器内设置：
-
-```bash
-export HF_TOKEN=<your_huggingface_token>
-```
-
-如果要强制使用 Git 中的本地 SEA-RAFT `spring-M` 权重，运行时改为：
+默认运行不需要设置 `SEA_RAFT_URL`。如果要手动确认本地权重路径，可以运行：
 
 ```bash
 SEA_RAFT_CONFIG=src/SEA_RAFT/external/SEA-RAFT/config/eval/spring-M.json \
 SEA_RAFT_CHECKPOINT=weights/SEA-RAFT/Tartan-C-T-TSKH-spring540x960-M.pth \
 SEA_RAFT_URL= \
+./Run_BDD100K_STGRU.sh precompute
+```
+
+只有在明确想从 Hugging Face 在线加载 SEA-RAFT 时，才清空 checkpoint 并设置 URL：
+
+```bash
+SEA_RAFT_CONFIG=src/SEA_RAFT/external/SEA-RAFT/config/eval/spring-S.json \
+SEA_RAFT_CHECKPOINT= \
+SEA_RAFT_URL=MemorySlices/Tartan-C-T-TSKH-spring540x960-S \
 ./Run_BDD100K_STGRU.sh precompute
 ```
 

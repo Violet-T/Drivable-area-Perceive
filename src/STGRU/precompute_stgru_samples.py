@@ -38,9 +38,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--yolop-checkpoint", default=str(PROJECT_ROOT / "weights" / "YOLOP" / "End-to-end.pth"))
     parser.add_argument("--yolop-img-size", type=int, default=640)
     parser.add_argument("--sea-raft-repo", default=str(PROJECT_ROOT / "src" / "SEA_RAFT" / "external" / "SEA-RAFT"))
-    parser.add_argument("--sea-raft-config", default=str(PROJECT_ROOT / "src" / "SEA_RAFT" / "external" / "SEA-RAFT" / "config" / "eval" / "spring-S.json"))
-    parser.add_argument("--sea-raft-checkpoint", default="")
-    parser.add_argument("--sea-raft-url", default="MemorySlices/Tartan-C-T-TSKH-spring540x960-S")
+    parser.add_argument("--sea-raft-config", default=str(PROJECT_ROOT / "src" / "SEA_RAFT" / "external" / "SEA-RAFT" / "config" / "eval" / "spring-M.json"))
+    parser.add_argument("--sea-raft-checkpoint", default=str(PROJECT_ROOT / "weights" / "SEA-RAFT" / "Tartan-C-T-TSKH-spring540x960-M.pth"))
+    parser.add_argument("--sea-raft-url", default="")
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
 

@@ -51,9 +51,9 @@ YOLOP_REPO="${YOLOP_REPO:-src/YOLOP/external/YOLOP}"
 YOLOP_CHECKPOINT="${YOLOP_CHECKPOINT:-weights/YOLOP/End-to-end.pth}"
 YOLOP_IMG_SIZE="${YOLOP_IMG_SIZE:-640}"
 SEA_RAFT_REPO="${SEA_RAFT_REPO:-src/SEA_RAFT/external/SEA-RAFT}"
-SEA_RAFT_CONFIG="${SEA_RAFT_CONFIG:-src/SEA_RAFT/external/SEA-RAFT/config/eval/spring-S.json}"
-SEA_RAFT_CHECKPOINT="${SEA_RAFT_CHECKPOINT:-}"
-SEA_RAFT_URL="${SEA_RAFT_URL:-MemorySlices/Tartan-C-T-TSKH-spring540x960-S}"
+SEA_RAFT_CONFIG="${SEA_RAFT_CONFIG:-src/SEA_RAFT/external/SEA-RAFT/config/eval/spring-M.json}"
+SEA_RAFT_CHECKPOINT="${SEA_RAFT_CHECKPOINT:-weights/SEA-RAFT/Tartan-C-T-TSKH-spring540x960-M.pth}"
+SEA_RAFT_URL="${SEA_RAFT_URL:-}"
 
 require_sequence_args=()
 if [[ "${REQUIRE_SEQUENCE}" == "1" ]]; then

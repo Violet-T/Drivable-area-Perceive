@@ -69,7 +69,16 @@ class SEARAFTWrapper:
             load_ckpt(model, str(self.checkpoint_path))
             print(f"Loaded SEA-RAFT checkpoint from {self.checkpoint_path}")
         else:
-            model = RAFT.from_pretrained(self.model_url, args=self.args)
+            try:
+                model = RAFT.from_pretrained(self.model_url, args=self.args)
+            except Exception as exc:  # noqa: BLE001
+                raise RuntimeError(
+                    "Failed to load SEA-RAFT from Hugging Face. "
+                    "For cloud smoke tests, prefer the local checkpoint: "
+                    "SEA_RAFT_CONFIG=src/SEA_RAFT/external/SEA-RAFT/config/eval/spring-M.json "
+                    "SEA_RAFT_CHECKPOINT=weights/SEA-RAFT/Tartan-C-T-TSKH-spring540x960-M.pth "
+                    "SEA_RAFT_URL= ./Run_BDD100K_STGRU.sh precompute"
+                ) from exc
             print(f"Loaded SEA-RAFT model from {self.model_url}")
         return model.to(self.device).eval()
 
