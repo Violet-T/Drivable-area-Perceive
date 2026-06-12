@@ -2067,3 +2067,153 @@
 
 - 当前仍使用 smoke 训练权重，视频只能证明“不会再凭空铺满全图”，不能证明 STGRU 已经达到最终效果。
 - 后续正式训练需要用完整 sequence train/val/test 预计算样本重新训练 STGRU。
+
+## 2026-06-12
+
+### Modified Module
+
+- BDD100K Downloader
+- STGRU Dataset
+- STGRU Precompute
+
+### Changes
+
+- 更新 `download_bdd100k_video_scenes.py`，支持 BDD100K STGRU 训练数据准备：
+  - 默认下载/整理 100 个场景。
+  - 支持 `--selection-mode stratified`，优先根据 BDD image labels 中的 `weather / scene / timeofday` 分层随机选择，尽可能覆盖不同环境。
+  - 支持 `--random-seed` 控制随机复现。
+  - 支持从 drivable map 标签中筛选有可通行区域监督的 scene。
+  - 支持 `--prepare-stgru`，下载后对每个场景抽取 9-12 秒共 90 帧。
+  - 以 10 秒标注帧为中心，截取左右各 10 帧，形成 21 帧 STGRU sequence。
+  - 将 BDD drivable map 转成二值 `target_mask.npy`。
+  - 默认划分 `80 train / 10 val / 10 test`，数量可通过参数调整。
+- 新增 `src/STGRU/precompute_bdd100k_stgru_samples.py`：
+  - 读取 BDD STGRU scene manifest。
+  - 对中心帧和前一帧运行 YOLOP。
+  - 使用 SEA-RAFT 估计光流并 warp previous mask。
+  - 生成 `train_stgru.py` 可直接读取的 `train.csv / val.csv / test.csv`。
+- 新增 `Run_BDD100K_STGRU.sh`：
+  - `download`
+  - `precompute`
+  - `train`
+  - `all`
+  - 支持通过环境变量调整下载数量、划分数量、seed、分辨率、batch size、epoch。
+- 恢复 `.gitignore` 对 `weights/` 的忽略，并忽略 `*.before_*` 备份文件。
+
+### Reason
+
+- 云平台训练需要能够直接从 BDD100K 下载视频和 drivable 标签，并自动整理成 STGRU 训练格式。
+- BDD100K 的 drivable 标签对应视频第 10 秒标注帧，因此需要围绕 9-12 秒抽帧，并以 10 秒帧作为监督中心。
+- STGRU 训练需要时序上下文帧，但监督标签只在中心帧，因此数据准备需要明确保存 sequence 和中心帧 target。
+
+### Result
+
+- 本地完成语法验证：
+  - `download_bdd100k_video_scenes.py --help` 通过。
+  - `src/STGRU/precompute_bdd100k_stgru_samples.py --help` 通过。
+  - `Run_BDD100K_STGRU.sh` shell 语法检查通过。
+- 使用 `/tmp` 构造 fake BDD 场景完成抽帧 smoke：
+  - 9-12 秒抽出 90 帧。
+  - 10 秒中心帧左右各 10 帧得到 21 帧 sequence。
+  - 成功生成 train scene manifest 和 binary target mask。
+
+### Known Issues
+
+- BDD100K 官方下载入口需要合法登录 Cookie 或显式提供直链，脚本不会绕过访问控制。
+- 分层覆盖依赖 `bdd100k_labels_images_*.json` 中的 attributes；如果只提供 video zip 而不提供 image label/drivable map 包，脚本会退化为随机视频选择。
+- 当前 BDD 预计算脚本每个 scene 生成一个中心帧监督样本；如需利用 21 帧内多个传播步训练，需要后续扩展 recurrent unroll 训练。
+
+## 2026-06-10
+
+### Modified Module
+
+- Dataset
+- Scripts
+
+### Changes
+
+- 新增 `download_bdd100k_video_scenes.py`。
+- 支持从 BDD100K 下载页抓取 video / label 链接，包括 `window.open(...)` 按钮形式的下载地址。
+- 已将 BDD100K `Videos` 按钮对应地址纳入默认候选：
+  - `http://128.32.162.150/bdd100k/bdd100k_videos.zip`
+- 支持通过 manifest 或直链手工提供下载地址。
+- 支持 browser cookie / Netscape cookie 文件，用于已登录 BDD100K 用户门户后的合法下载。
+- 将下载到的视频按单个 scene 拆成独立文件夹：
+  - `scenes/<scene_id>/video/`
+  - `scenes/<scene_id>/labels/`
+  - `scenes/<scene_id>/meta.json`
+- 增加 `--num-scenes`、`--max-total-size`、`--split`、`--scene-name`、`--scene-list` 等命令行参数。
+- 对网络下载量和最终落盘目录同时做大小限制，默认不超过 `1G`，超过后立即停止。
+- 对远程 HTTP zip 支持 Range 分块读取：
+  - 先读取 Zip64 central directory。
+  - 只下载目标 scene 对应的视频成员和 label 成员。
+  - 不下载完整 `bdd100k_videos.zip`。
+- 默认只下载 `bdd100k_labels.zip` 中与目标 scene 匹配的 JSON label；其他 label 包可通过 `--label-url` 或 `--label-pattern` 显式指定。
+
+### Reason
+
+- 后续 YOLOP / SEA-RAFT / Temporal Fusion 实验需要可控规模的 BDD100K 视频子集。
+- 单次下载完整 BDD100K video 数据过大，不适合当前项目的增量调试。
+- 按 scene 组织视频和标签，便于逐场景运行 temporal consistency 评估和可视化导出。
+
+### Result
+
+- 已用本地 mock BDD100K video zip 和 label zip 进行 smoke test。
+- 测试结果显示脚本可以拆出独立 scene 文件夹，并将匹配的 JSON label 写入对应目录。
+- 已对官方 `bdd100k_videos.zip` 执行远程 zip 目录解析测试：
+  - 完整 video zip 大约 `1.79 TiB`。
+  - 服务器支持 `Accept-Ranges: bytes`。
+  - 读取 central directory 约 `12.33 MiB`，可列出 `100000` 个视频成员。
+- 已对 1 个 train scene 执行真实 Range 下载测试：
+  - 成功下载 `0000f77c-6257be58.mov`。
+  - 成功从 `bdd100k_labels.zip` 下载同名 JSON label。
+  - 输出结构符合单 scene 文件夹组织。
+
+### Known Issues
+
+- 若服务器关闭 HTTP Range，脚本会回退到整包下载逻辑；此时完整 video archive 会超过 `1G` 并按限制停止。
+- 当前 label 默认使用 `bdd100k_labels.zip`。如果实验需要 drivable area label，还需要显式传入 `bdd100k_drivable_maps.zip` 或相关 2021 drivable label 包，并确认其文件命名能与 video scene id 对齐。
+
+## 2026-06-11
+
+### Modified Module
+
+- Dataset
+- Scripts
+
+### Changes
+
+- 明确 BDD100K `Videos` 下载内容是 `.mov` 视频 clip，不是已切好的图片序列。
+- 修正 `download_bdd100k_video_scenes.py` 的 label 匹配逻辑：
+  - 支持 `*_drivable_color.png`
+  - 支持 `*_drivable_id.png`
+  - 支持 `*_train_color.png` / `*_train_id.png`
+- 默认 label 下载范围从仅 `bdd100k_labels.zip` 扩展为：
+  - `bdd100k_labels.zip`
+  - `bdd100k_drivable_maps.zip`
+- 新增视频后处理参数：
+  - `--clip-start`
+  - `--clip-end`
+  - `--clip-duration`
+  - `--extract-frames`
+  - `--frame-fps`
+  - `--discard-full-video`
+- 使用 `ffmpeg` 将下载后的视频截取为指定时间片段，并可导出图片帧。
+
+### Reason
+
+- 当前项目的 YOLOP / SEA-RAFT / STGRU 流程更适合使用连续图片帧或短视频片段调试。
+- 用户需要从约 `10s` 附近截取 `7s-13s` 的局部片段，避免每次处理完整 40s 视频。
+- 基础 JSON label 不包含像素级 free-space / drivable mask，需要额外下载 drivable map 文件。
+
+### Result
+
+- 已用本地已有 BDD100K `.mov` 验证 `7s-13s` 截取：
+  - 输出 clip 时长约 `6.006s`
+  - `--frame-fps 2` 输出 `12` 张图片帧
+- `python3 -m py_compile download_bdd100k_video_scenes.py` 通过。
+
+### Known Issues
+
+- 远程 zip 内的视频不能可靠地只下载 `7s-13s` 字节范围；脚本仍需先下载完整单 scene `.mov`，再本地截取片段。
+- `bdd100k_drivable_maps.zip` 是按 image/frame id 提供的 drivable mask；并非所有 video scene 都一定有对应的分割 mask。
