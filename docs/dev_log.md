@@ -2523,3 +2523,83 @@
 ### Known Issues
 
 - 兼容模式未经完整正式训练验证；如果 smoke 或正式训练出现版本相关问题，需要切换云平台模板到 Python `3.10`。
+
+## 2026-06-12
+
+### Modified Module
+
+- Environment
+- Docker
+- STGRU
+
+### Changes
+
+- 新增本地云平台模拟镜像：
+  - `docker/Dockerfile.cloud-py312-torch23`
+  - Python `3.12`
+  - PyTorch `2.3.0+cu121`
+  - torchvision `0.18.0+cu121`
+  - torchaudio `2.3.0+cu121`
+- 将模拟镜像中的 `opencv-python-headless` 固定为 `4.9.0.80`，避免新版 OpenCV 强制拉起 NumPy `2.x`。
+- 在本地 Docker 中验证云平台受限环境：
+  - `ALLOW_PYTHON_MISMATCH=1 INSTALL_TORCH=0 INSTALL_APT=0 ./Setup_Cloud_Env.sh`
+  - YOLOP wrapper 导入
+  - SEA-RAFT wrapper 导入
+  - STGRU wrapper 导入
+  - STGRU CUDA 前向融合
+
+### Reason
+
+- 云平台当前只提供 Python `3.12` 和 PyTorch `2.3`，与项目标准环境 Python `3.10` + PyTorch `2.2` 不一致。
+- 需要在本地复刻该环境，提前暴露版本兼容问题，降低远程训练部署风险。
+
+### Result
+
+- 本地镜像 `perceive-cloud-py312-torch23:latest` 构建并验证通过。
+- 验证环境：
+  - Python `3.12.13`
+  - PyTorch `2.3.0+cu121`
+  - CUDA `12.1`
+  - OpenCV `4.9.0`
+  - NumPy `1.26.4`
+  - GPU: `NVIDIA GeForce RTX 4060 Laptop GPU`
+- STGRU 融合输出验证通过，输出 shape 为 `64x96` 的 `float32` mask。
+
+### Known Issues
+
+- 该镜像是云平台受限环境的 smoke 验证，不是项目标准复现实验环境。
+- 尚未在 Python `3.12` + PyTorch `2.3` 下完成完整 BDD100K 预计算和正式 STGRU 训练。
+- 如果远程正式训练出现版本相关问题，优先切换回项目标准环境 Python `3.10` + PyTorch `2.2`。
+
+## 2026-06-12
+
+### Modified Module
+
+- STGRU
+- Cityscapes Dataset
+- Training Script
+
+### Changes
+
+- 新增 `Run_Cityscapes_STGRU.sh`。
+- 脚本串联 Cityscapes 关键帧监督训练流程：
+  - 将 `gtFine` 的 `labelIds` 转换为 road/free-space 二值 mask。
+  - 使用 `leftImg8bit_sequence` 中关键帧及其历史帧构建连续帧输入。
+  - 预计算 YOLOP 当前帧 mask、历史帧 mask、SEA-RAFT flow、warped mask、photometric error。
+  - 调用 `train_stgru.py` 使用预计算 CSV 训练 STGRU，并输出验证/测试指标。
+- 默认训练分辨率为 `960x540`，对齐 SEA-RAFT spring 540x960 权重使用习惯。
+
+### Reason
+
+- STGRU 训练需要同时具备连续帧输入和关键帧监督标签。
+- Cityscapes 的 `leftImg8bit_sequence` 提供连续帧，`gtFine` 提供关键帧精细标注，二者可以组成 STGRU 的监督训练样本。
+
+### Result
+
+- `bash -n Run_Cityscapes_STGRU.sh` 通过。
+- `precompute_stgru_samples.py`、`train_stgru.py`、`prepare_cityscapes_binary.py` 编译检查通过。
+
+### Known Issues
+
+- 如果某个 split 缺少 `leftImg8bit_sequence`，且 `REQUIRE_SEQUENCE=1`，该 split 会跳过缺失样本。
+- Cityscapes 的关键帧标注稀疏，训练监督只发生在有 gtFine 的关键帧位置，不等价于完整视频逐帧监督。
