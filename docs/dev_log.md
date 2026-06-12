@@ -2217,3 +2217,196 @@
 
 - 远程 zip 内的视频不能可靠地只下载 `7s-13s` 字节范围；脚本仍需先下载完整单 scene `.mov`，再本地截取片段。
 - `bdd100k_drivable_maps.zip` 是按 image/frame id 提供的 drivable mask；并非所有 video scene 都一定有对应的分割 mask。
+
+## 2026-06-12
+
+### Modified Module
+
+- Dataset
+- STGRU
+- Scripts
+
+### Changes
+
+- 修改 `download_bdd100k_video_scenes.py`：
+  - 新增 `--local-drivable-root`，默认读取 `data/bdd100k_drivable_maps`。
+  - 新增 `--bdd-drivable-values`，默认将 `*_drivable_id.png` 中的 `1,2` 视为 free-space。
+  - 在 `--prepare-stgru` 阶段优先从本地 BDD100K drivable maps 中按 scene id 匹配监督标签。
+  - 本地标签索引会根据 `--split` 过滤 `train/val/test`，避免 train 视频和 val 标签错配。
+  - 输出 STGRU scene manifest 时新增 `source_label` 字段，便于追踪监督标签来源。
+- 修改 `Run_BDD100K_STGRU.sh`：
+  - 增加 `BDD_DRIVABLE_ROOT` 和 `BDD_DRIVABLE_VALUES` 环境变量。
+  - 批处理下载/整理阶段自动传入本地 drivable maps 路径。
+
+### Reason
+
+- 本地已经存在 BDD100K drivable maps 精细标注帧和像素级标签，训练 STGRU 时应直接使用这些标签作为监督信号。
+- 避免训练准备阶段依赖远程 label 包下载，也避免只下载视频后找不到对应 drivable mask。
+
+### Result
+
+- 已验证本地 `data/bdd100k_drivable_maps` 可建立标签索引：
+  - `train`: `70000` 个 scene label
+  - `val`: `10000` 个 scene label
+- 已验证 `*_drivable_id.png` 可转换为 `float32` 的二值 `target_mask.npy`：
+  - shape: `720 x 1280`
+  - value range: `0/1`
+- `python3 -m py_compile download_bdd100k_video_scenes.py` 通过。
+- `bash -n Run_BDD100K_STGRU.sh` 通过。
+
+### Known Issues
+
+- 当前 BDD100K STGRU 数据准备仍以第 10 秒精细标注帧作为单帧监督中心，只生成中心帧附近 `+-10` 帧上下文。
+- 若后续要训练完整多步 recurrent STGRU，需要把当前 manifest 扩展为多时间步 supervision 或 sequence-level unroll。
+
+## 2026-06-12
+
+### Modified Module
+
+- Dataset
+- Scripts
+
+### Changes
+
+- 修复 `download_bdd100k_video_scenes.py` 在远程 BDD label zip 目录解析超时时直接退出的问题。
+- 新增 `--skip-remote-label-selection` 参数：
+  - 启用后不再尝试读取远程 label zip 的 image attributes。
+  - 直接使用本地 `data/bdd100k_drivable_maps` 随机选择有监督标签的 scene。
+- 修改 `Run_BDD100K_STGRU.sh`：
+  - 新增 `SKIP_REMOTE_LABEL_SELECTION` 环境变量。
+  - 默认值为 `1`，适配云平台网络不稳定或远程 label zip 响应慢的情况。
+
+### Reason
+
+- 云平台运行时读取远程 BDD label zip central directory 可能出现 `TimeoutError`。
+- 当前训练目标只需要保证下载的视频 scene 有对应 drivable mask 监督；本地 drivable maps 已经足够完成这个匹配。
+
+### Result
+
+- 远程 label zip 解析失败时，脚本会 warning 并回退到本地 drivable maps 随机选择。
+- 批处理入口默认跳过远程 label 解析，减少下载前置阶段的不稳定性。
+- `python3 -m py_compile download_bdd100k_video_scenes.py` 通过。
+- `bash -n Run_BDD100K_STGRU.sh` 通过。
+
+### Known Issues
+
+- 跳过远程 image attributes 后，场景选择不再按 weather / scene / timeofday 分层，只能保证从有 drivable mask 的 scene 中随机采样。
+- 如果后续必须覆盖天气和时间属性，需要额外提供本地 `bdd100k_labels_images_*.json`，再从本地 JSON 做分层选择。
+
+## 2026-06-12
+
+### Modified Module
+
+- SEA-RAFT
+- STGRU
+- Dataset
+
+### Changes
+
+- 修复 BDD100K STGRU 预计算阶段的 `ModuleNotFoundError: No module named 'utils.temporal'`。
+- 原因是 SEA-RAFT 加载时会临时导入第三方库自己的顶层 `utils`，污染 `sys.modules` 后导致项目内 `src/utils/temporal` 无法被正确解析。
+- 修改 `src/SEA_RAFT/sea_raft_wrapper.py`：
+  - 在加载 SEA-RAFT 内部 `utils.utils` 后，若原本没有 `utils` 模块，则清理临时缓存。
+  - 若原本已有项目 `utils`，则恢复原模块。
+- 修改 `src/STGRU/precompute_bdd100k_stgru_samples.py`：
+  - 在脚本初始化时提前导入项目内 `warp_mask_with_flow` 和 `warp_image_with_flow`。
+
+### Reason
+
+- BDD100K 数据准备已经成功生成 STGRU scene manifest，但预计算 YOLOP + SEA-RAFT 输入时被第三方库命名冲突中断。
+- 该修复保证项目自有模块和外部模型仓库可以在同一进程内稳定协作。
+
+### Result
+
+- 已在 Docker 容器 `perceive` 中继续运行，不重新下载数据。
+- `./Run_BDD100K_STGRU.sh precompute` 成功：
+  - train: `3` samples
+  - val: `1` sample
+  - test: `1` sample
+- `EPOCHS=1 BATCH_SIZE=2 ./Run_BDD100K_STGRU.sh train` 成功：
+  - 输出 `weights/STGRU_BDD100K/stgru_best.pth`
+  - 输出 `weights/STGRU_BDD100K/stgru_latest.pth`
+  - 输出 `training_log.csv`
+  - 输出 `evaluation_summary.csv`
+- smoke 指标：
+  - val IoU: `0.7707`
+  - test IoU: `0.5547`
+
+### Known Issues
+
+- 当前 smoke 只使用 `5` 个 BDD100K scene，指标只用于验证流程可运行，不能代表模型真实性能。
+- 正式训练仍需要扩大到 `100` 个或更多 scene，并观察 val/test 是否稳定。
+
+## 2026-06-12
+
+### Modified Module
+
+- Repository
+- Docker
+- Documentation
+
+### Changes
+
+- 整理 GitHub 提交前的仓库结构：
+  - 从 Git 索引中移除已跟踪的大权重文件和生成结果。
+  - 保留 `weights/YOLOP/.gitkeep`、`weights/SEA-RAFT/.gitkeep`、`weights/STGRU/.gitkeep`，维持权重目录结构。
+  - 更新 `.gitignore`，忽略第三方库内部权重、外部 demo 输出、Codex 本地目录、数据集、输出和训练权重。
+  - 更新 `.dockerignore`，避免 Docker build context 包含 `data/`、`output/`、`weights/` 等大目录。
+- 新增 `docs/remote_training_ssh.md`：
+  - 记录 GitHub push、SSH 登录服务器、Docker 构建、权重/BDD 标签同步、smoke 训练和正式 100 scene 训练流程。
+- 更新 `README.md`：
+  - 增加 BDD100K STGRU 训练入口和必要资产说明。
+
+### Reason
+
+- 准备将项目推送到 GitHub，并在远程 GPU 服务器上通过 SSH 进行最终部署和训练。
+- 避免将本地数据集、输出视频、训练中间结果和大权重文件提交到 GitHub。
+
+### Result
+
+- 当前 Git 跟踪文件中最大文件约为 YOLOP demo 视频 `11.8 MB`，已移除 `95 MB` 级 YOLOP 权重和 `78 MB` 级 SEA-RAFT 权重的 Git 跟踪。
+- Docker build context 将不再包含本地 BDD100K 数据、实验输出和权重目录。
+
+### Known Issues
+
+- 早期提交历史中可能仍包含曾经提交过的大权重文件；当前整理保证后续提交不再继续跟踪这些文件。
+- 如果 GitHub push 因历史大文件失败，需要使用 `git filter-repo` 或 BFG 清理历史。
+
+## 2026-06-12
+
+### Modified Module
+
+- Repository
+- Documentation
+- Scripts
+
+### Changes
+
+- 根据项目部署需求，恢复将 YOLOP 和 SEA-RAFT 必要 `.pth` 权重纳入 Git：
+  - `weights/YOLOP/End-to-end.pth`
+  - `weights/SEA-RAFT/Tartan-C-T-TSKH-spring540x960-M.pth`
+- `.gitignore` 保留对 STGRU smoke 输出、训练结果、ONNX 导出和数据集的忽略，但放行上述两个必要权重。
+- `Run_BDD100K_STGRU.sh` 新增可配置变量：
+  - `YOLOP_CHECKPOINT`
+  - `SEA_RAFT_CONFIG`
+  - `SEA_RAFT_CHECKPOINT`
+  - `SEA_RAFT_URL`
+- 更新远程部署文档：
+  - 说明 YOLOP / SEA-RAFT 必要权重随 Git 下发。
+  - 保留 BDD100K drivable maps 通过 `rsync` 或云端下载准备。
+  - 增加切换本地 SEA-RAFT `spring-M` checkpoint 的命令。
+
+### Reason
+
+- 远程服务器部署时，STGRU precompute 必须可直接访问 YOLOP 权重。
+- 用户希望将 SEA-RAFT 权重也随仓库维护，减少远程服务器对 Hugging Face 网络访问的依赖。
+
+### Result
+
+- 当前将必要 `.pth` 权重恢复到 Git 暂存区。
+- 不提交 `weights/STGRU_BDD100K/`、`weights/STGRU_smoke/`、`weights/STGRU_precompute_smoke/` 等训练输出。
+
+### Known Issues
+
+- 当前环境没有安装 `git lfs`，权重将作为普通 Git 文件提交。
+- YOLOP 权重约 `92 MB`，SEA-RAFT 权重约 `76 MB`，低于 GitHub 单文件 `100 MB` 限制，但 push 时可能出现 large file warning。

@@ -15,6 +15,9 @@ from tqdm import tqdm
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
+from utils.temporal.warp import warp_mask_with_flow  # noqa: E402
+from utils.temporal.warp_image import warp_image_with_flow  # noqa: E402
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Precompute BDD100K STGRU samples")
@@ -111,8 +114,6 @@ def precompute_row(
 
     previous_mask = yolop.infer_drivable_mask(previous_bgr)
     current_mask = yolop.infer_drivable_mask(current_bgr)
-    from utils.temporal.warp import warp_mask_with_flow
-    from utils.temporal.warp_image import warp_image_with_flow
 
     flow = sea_raft.infer_flow(previous_bgr, current_bgr)
     warped_mask = warp_mask_with_flow(previous_mask, flow)

@@ -57,8 +57,12 @@ class SEARAFTWrapper:
         finally:
             if previous_utils is not None:
                 sys.modules["utils"] = previous_utils
+            else:
+                sys.modules.pop("utils", None)
             if previous_utils_utils is not None:
                 sys.modules["utils.utils"] = previous_utils_utils
+            else:
+                sys.modules.pop("utils.utils", None)
 
         if self.checkpoint_path is not None:
             model = RAFT(self.args)

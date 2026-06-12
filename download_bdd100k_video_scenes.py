@@ -190,6 +190,16 @@ def parse_size(value: str) -> int:
     return int(number * multipliers[unit])
 
 
+def parse_int_set(value: str) -> set[int]:
+    items = [item.strip() for item in value.split(",") if item.strip()]
+    if not items:
+        return set()
+    try:
+        return {int(item) for item in items}
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"无法解析整数集合: {value}") from exc
+
+
 def directory_size(path: Path) -> int:
     if not path.exists():
         return 0
@@ -1343,7 +1353,64 @@ def find_scene_drivable_label(scene_dir: Path, stem: str) -> Path | None:
     return sorted(drivable or candidates)[0]
 
 
-def convert_bdd_drivable_mask(label_path: Path, output_npy: Path, output_png: Path) -> None:
+def local_drivable_label_priority(path: Path, preferred_split: str | None) -> tuple[int, int, int, str]:
+    parts = set(path.parts)
+    split_rank = 0 if preferred_split and preferred_split in parts else 1
+    source_rank = 0 if "labels" in parts else 1
+    kind_rank = 0 if path.name.endswith("_drivable_id.png") else 1
+    return split_rank, source_rank, kind_rank, str(path)
+
+
+def build_local_drivable_label_index(root: Path | None, preferred_split: str | None) -> dict[str, Path]:
+    """建立 BDD100K drivable maps 本地索引，优先使用 labels/*_drivable_id.png。"""
+    if root is None:
+        return {}
+    root = root.resolve()
+    if not root.exists():
+        logging.warning("本地 BDD drivable root 不存在，将跳过: %s", root)
+        return {}
+
+    bdd_splits = {"train", "val", "test"}
+    candidates = []
+    for path in root.rglob("*"):
+        if not (
+            path.is_file()
+            and path.suffix.lower() in {".png", ".jpg", ".jpeg"}
+            and "drivable" in path.name.lower()
+        ):
+            continue
+        parts = set(path.parts)
+        if preferred_split and parts & bdd_splits and preferred_split not in parts:
+            continue
+        candidates.append(path)
+    index: dict[str, Path] = {}
+    priority: dict[str, tuple[int, int, int, str]] = {}
+    for path in candidates:
+        stem = label_scene_stem(path.name)
+        rank = local_drivable_label_priority(path, preferred_split)
+        if stem not in index or rank < priority[stem]:
+            index[stem] = path
+            priority[stem] = rank
+    logging.info("本地 BDD drivable 标签索引完成: %d 个场景，root=%s", len(index), root)
+    return index
+
+
+def find_drivable_label(
+    scene_dir: Path,
+    stem: str,
+    local_drivable_index: dict[str, Path] | None = None,
+) -> Path | None:
+    if local_drivable_index and stem in local_drivable_index:
+        return local_drivable_index[stem]
+    return find_scene_drivable_label(scene_dir, stem)
+
+
+def convert_bdd_drivable_mask(
+    label_path: Path,
+    output_npy: Path,
+    output_png: Path,
+    drivable_values: set[int] | None = None,
+) -> None:
     image = None
     try:
         image = cv2_imread(str(label_path), unchanged=True)
@@ -1352,14 +1419,17 @@ def convert_bdd_drivable_mask(label_path: Path, output_npy: Path, output_png: Pa
     if image is None:
         raise FileNotFoundError(label_path)
     if image.ndim == 2:
-        mask = (image > 0).astype(np.float32)
+        values = drivable_values or set()
+        if values:
+            mask = np.isin(image, list(values)).astype(np.float32)
+        else:
+            mask = (image > 0).astype(np.float32)
     else:
-        # BDD drivable color maps use non-black pixels for direct/alternative drivable regions.
+        # BDD drivable color maps 使用非黑色像素表示 direct/alternative drivable 区域。
         mask = (np.max(image[:, :, :3], axis=2) > 0).astype(np.float32)
     output_npy.parent.mkdir(parents=True, exist_ok=True)
     np.save(output_npy, mask)
     cv2_imwrite(str(output_png), (mask * 255).astype(np.uint8))
-
 
 def cv2_imread(path: str, unchanged: bool = False):
     import cv2
@@ -1384,9 +1454,11 @@ def extract_bdd_stgru_scene_frames(
     clip_duration: float,
     center_second: float,
     context_frames: int,
-) -> tuple[Path, Path, Path] | None:
+    local_drivable_index: dict[str, Path] | None,
+    drivable_values: set[int],
+) -> tuple[Path, Path, Path, Path] | None:
     source_video = find_scene_video(scene_dir)
-    label_path = find_scene_drivable_label(scene_dir, stem)
+    label_path = find_drivable_label(scene_dir, stem, local_drivable_index)
     if source_video is None or label_path is None:
         logging.warning("跳过 STGRU 场景，缺少 video 或 drivable label: %s", stem)
         return None
@@ -1435,8 +1507,8 @@ def extract_bdd_stgru_scene_frames(
         destination = sequence_dir / f"frame_{offset:+04d}.jpg"
         shutil.copy2(source_frame, destination)
 
-    convert_bdd_drivable_mask(label_path, target_npy, target_png)
-    return sequence_dir / "frame_-001.jpg", sequence_dir / "frame_+000.jpg", target_npy
+    convert_bdd_drivable_mask(label_path, target_npy, target_png, drivable_values)
+    return sequence_dir / "frame_-001.jpg", sequence_dir / "frame_+000.jpg", target_npy, label_path
 
 
 def write_bdd_stgru_manifests(
@@ -1451,9 +1523,13 @@ def write_bdd_stgru_manifests(
     clip_duration: float,
     center_second: float,
     context_frames: int,
+    local_drivable_root: Path | None,
+    label_split: str | None,
+    drivable_values: set[int],
 ) -> None:
     output_root.mkdir(parents=True, exist_ok=True)
     rng = random.Random(seed)
+    local_drivable_index = build_local_drivable_label_index(local_drivable_root, label_split)
     scene_ids = list(context.selected_stems)
     rng.shuffle(scene_ids)
     required = train_count + val_count + test_count
@@ -1481,10 +1557,12 @@ def write_bdd_stgru_manifests(
             clip_duration=clip_duration,
             center_second=center_second,
             context_frames=context_frames,
+            local_drivable_index=local_drivable_index,
+            drivable_values=drivable_values,
         )
         if result is None:
             continue
-        previous_image, current_image, target_mask = result
+        previous_image, current_image, target_mask, source_label = result
         rows.append(
             {
                 "split": split,
@@ -1493,6 +1571,7 @@ def write_bdd_stgru_manifests(
                 "previous_image": str(previous_image),
                 "current_image": str(current_image),
                 "target_mask": str(target_mask),
+                "source_label": str(source_label),
                 "sequence_dir": str((context.scenes_dir / scene_id / "stgru" / "sequence_pm10")),
                 "all_frames_dir": str((context.scenes_dir / scene_id / "stgru" / "frames_9_12s")),
             }
@@ -1505,6 +1584,7 @@ def write_bdd_stgru_manifests(
         "previous_image",
         "current_image",
         "target_mask",
+        "source_label",
         "sequence_dir",
         "all_frames_dir",
     ]
@@ -1547,6 +1627,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--max-total-size", type=parse_size, default=parse_size("200G"), help="下载和落盘硬限制")
     parser.add_argument("--selection-mode", default="stratified", choices=["first", "random", "stratified"], help="场景选择方式")
     parser.add_argument("--random-seed", type=int, default=42, help="随机选择和 train/val/test 划分随机种子")
+    parser.add_argument("--skip-remote-label-selection", action="store_true", help="跳过远程 label zip 解析，直接使用本地 drivable maps 随机场景")
     parser.add_argument("--cookie", help="直接传入 Cookie header 内容")
     parser.add_argument("--cookie-file", type=Path, help="浏览器导出的 Cookie 文件，支持 Netscape 格式")
     parser.add_argument("--scene-name", action="append", default=[], help="只下载指定场景 id，可重复传入")
@@ -1561,6 +1642,18 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--discard-full-video", action="store_true", help="截取片段成功后删除完整原视频，只保留 clip/frames")
     parser.add_argument("--prepare-stgru", action="store_true", help="下载后整理成 BDD STGRU 场景目录和 split manifest")
     parser.add_argument("--stgru-output-root", type=Path, default=Path("data/bdd100k_stgru"), help="BDD STGRU manifest 输出目录")
+    parser.add_argument(
+        "--local-drivable-root",
+        type=Path,
+        default=Path("data/bdd100k_drivable_maps"),
+        help="本地 BDD100K drivable maps 根目录，优先用于 STGRU 监督标签匹配",
+    )
+    parser.add_argument(
+        "--bdd-drivable-values",
+        type=parse_int_set,
+        default=parse_int_set("1,2"),
+        help="BDD *_drivable_id.png 中视为 free-space 的像素值，默认 1,2；传空字符串表示所有 >0",
+    )
     parser.add_argument("--stgru-train-count", type=int, default=80)
     parser.add_argument("--stgru-val-count", type=int, default=10)
     parser.add_argument("--stgru-test-count", type=int, default=10)
@@ -1617,16 +1710,27 @@ def main(argv: list[str]) -> int:
     )
     label_urls = unique_keep_order(manifest["label_urls"] + args.label_url + discovered_label_urls)
 
-    if not context.target_stems and args.selection_mode == "stratified" and label_urls:
+    if (
+        not context.target_stems
+        and args.selection_mode == "stratified"
+        and label_urls
+        and not args.skip_remote_label_selection
+    ):
         logging.info("尝试基于 BDD image attributes + drivable maps 分层随机选择场景。")
-        candidates = load_bdd_image_label_candidates(label_urls, context, args.split or None)
-        drivable_stems = find_bdd_drivable_stems(label_urls, context, args.split or None)
-        selected = stratified_select_bdd_scenes(
-            candidates=candidates,
-            drivable_stems=drivable_stems,
-            num_scenes=args.num_scenes,
-            seed=args.random_seed,
-        )
+        selected: list[str] = []
+        candidates: dict[str, BDDSceneCandidate] = {}
+        drivable_stems: set[str] = set()
+        try:
+            candidates = load_bdd_image_label_candidates(label_urls, context, args.split or None)
+            drivable_stems = find_bdd_drivable_stems(label_urls, context, args.split or None)
+            selected = stratified_select_bdd_scenes(
+                candidates=candidates,
+                drivable_stems=drivable_stems,
+                num_scenes=args.num_scenes,
+                seed=args.random_seed,
+            )
+        except (urllib.error.URLError, TimeoutError, OSError, RuntimeError) as exc:
+            logging.warning("远程 label zip 解析失败，将回退到本地 drivable maps 随机选择: %s", exc)
         if selected:
             context.target_stems = set(selected)
             save_manifest(
@@ -1641,6 +1745,25 @@ def main(argv: list[str]) -> int:
             logging.info("已分层随机选择 %d 个候选场景。", len(selected))
         else:
             logging.warning("无法从标签中生成分层候选，将回退为视频压缩包内随机选择。")
+
+    if not context.target_stems and args.prepare_stgru:
+        local_drivable_index = build_local_drivable_label_index(args.local_drivable_root, args.split or None)
+        if local_drivable_index:
+            selected = sorted(local_drivable_index)
+            rng = random.Random(args.random_seed)
+            rng.shuffle(selected)
+            selected = selected[: args.num_scenes]
+            context.target_stems = set(selected)
+            save_manifest(
+                manifest_dir / "selected_scene_plan.json",
+                {
+                    "selection_mode": ["local_drivable_random"],
+                    "scene_ids": selected,
+                    "candidate_count": [str(len(local_drivable_index))],
+                    "local_drivable_root": [str(args.local_drivable_root.resolve())],
+                },
+            )
+            logging.info("已从本地 drivable maps 随机选择 %d 个有监督标签的候选场景。", len(selected))
 
     logging.info("发现 video 链接数量: %d", len(video_urls))
     logging.info("发现 label 链接数量: %d", len(label_urls))
@@ -1695,6 +1818,9 @@ def main(argv: list[str]) -> int:
             clip_duration=args.stgru_clip_duration,
             center_second=args.stgru_center_second,
             context_frames=args.stgru_context_frames,
+            local_drivable_root=args.local_drivable_root,
+            label_split=args.split or None,
+            drivable_values=args.bdd_drivable_values,
         )
 
     summary = {

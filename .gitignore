@@ -29,12 +29,36 @@ output/*
 weights/*
 !weights/README.md
 !weights/.gitkeep
+!weights/YOLOP/
+weights/YOLOP/*
+!weights/YOLOP/.gitkeep
+!weights/YOLOP/End-to-end.pth
+!weights/SEA-RAFT/
+weights/SEA-RAFT/*
+!weights/SEA-RAFT/.gitkeep
+!weights/SEA-RAFT/Tartan-C-T-TSKH-spring540x960-M.pth
+!weights/STGRU/
+weights/STGRU/*
+!weights/STGRU/.gitkeep
+src/YOLOP/external/YOLOP/weights/*
+!src/YOLOP/external/YOLOP/weights/
+!src/YOLOP/external/YOLOP/weights/End-to-end.pth
+src/SEA_RAFT/external/SEA-RAFT/models/*
+!src/SEA_RAFT/external/SEA-RAFT/models/
+!src/SEA_RAFT/external/SEA-RAFT/models/Tartan-C-T-TSKH-spring540x960-M.pth
+
+# Generated outputs inside external repositories
+src/YOLOP/external/YOLOP/inference/output*/
+src/YOLOP/external/YOLOP/runs/
 
 
 # Editor / OS files
 .vscode/
 .idea/
 .DS_Store
+.codex/
+.agents/
+AGENTS.local.md
 
 # Logs and temporary files
 *.log

@@ -116,3 +116,59 @@ SEA-RAFT = optical-flow estimator
 warp = temporal alignment operator
 STGRU = trainable temporal fusion module
 ```
+
+## BDD100K STGRU Training
+
+Remote SSH deployment and training steps are documented in:
+
+```text
+docs/remote_training_ssh.md
+```
+
+Small smoke run inside Docker:
+
+```bash
+NUM_SCENES=5 \
+TRAIN_COUNT=3 \
+VAL_COUNT=1 \
+TEST_COUNT=1 \
+MAX_TOTAL_SIZE=20G \
+EPOCHS=1 \
+BATCH_SIZE=2 \
+./Run_BDD100K_STGRU.sh all
+```
+
+Formal 100-scene run:
+
+```bash
+NUM_SCENES=100 \
+TRAIN_COUNT=80 \
+VAL_COUNT=10 \
+TEST_COUNT=10 \
+MAX_TOTAL_SIZE=200G \
+EPOCHS=20 \
+BATCH_SIZE=2 \
+./Run_BDD100K_STGRU.sh all
+```
+
+Required local assets:
+
+```text
+data/bdd100k_drivable_maps/
+```
+
+The repository includes the project-required YOLOP and SEA-RAFT `.pth` checkpoints:
+
+```text
+weights/YOLOP/End-to-end.pth
+weights/SEA-RAFT/Tartan-C-T-TSKH-spring540x960-M.pth
+```
+
+By default, BDD100K precompute uses the Hugging Face SEA-RAFT `spring-S` model URL. To force the local `spring-M` checkpoint:
+
+```bash
+SEA_RAFT_CONFIG=src/SEA_RAFT/external/SEA-RAFT/config/eval/spring-M.json \
+SEA_RAFT_CHECKPOINT=weights/SEA-RAFT/Tartan-C-T-TSKH-spring540x960-M.pth \
+SEA_RAFT_URL= \
+./Run_BDD100K_STGRU.sh precompute
+```
