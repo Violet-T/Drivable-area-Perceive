@@ -14,6 +14,7 @@ INSTALL_TORCH="${INSTALL_TORCH:-1}"
 REQUIRED_PYTHON_MAJOR="${REQUIRED_PYTHON_MAJOR:-3}"
 REQUIRED_PYTHON_MINOR="${REQUIRED_PYTHON_MINOR:-10}"
 ALLOW_PYTHON_MISMATCH="${ALLOW_PYTHON_MISMATCH:-0}"
+OPENCV_HEADLESS_VERSION="${OPENCV_HEADLESS_VERSION:-4.9.0.80}"
 
 "${PYTHON_BIN}" - <<PY
 import sys
@@ -71,15 +72,27 @@ fi
 
 "${PYTHON_BIN}" -m pip install -r requirements.txt
 
+if ! "${PYTHON_BIN}" - <<'PY' >/dev/null 2>&1
+import cv2
+PY
+then
+  echo "cv2 is not available; installing opencv-python-headless==${OPENCV_HEADLESS_VERSION}."
+  "${PYTHON_BIN}" -m pip install \
+    "numpy>=1.23,<2.0" \
+    "opencv-python-headless==${OPENCV_HEADLESS_VERSION}"
+fi
+
 "${PYTHON_BIN}" - <<'PY'
 import cv2
 import torch
 import sys
+import numpy as np
 
 print("python:", sys.version)
 print("torch:", torch.__version__)
 print("cuda_available:", torch.cuda.is_available())
 print("opencv:", cv2.__version__)
+print("numpy:", np.__version__)
 if torch.cuda.is_available():
     print("cuda_device:", torch.cuda.get_device_name(0))
 else:

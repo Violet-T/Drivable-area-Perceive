@@ -2636,3 +2636,32 @@
 
 - 图像匹配是工程近似方法，若视频画面压缩严重或 keyframe 与视频并非同源，匹配分数可能下降。
 - 低分匹配需要人工抽查，可通过 `--min-score` 设置阈值过滤。
+
+## 2026-06-12
+
+### Modified Module
+
+- Environment
+- Cloud Setup
+
+### Changes
+
+- 在 `requirements.txt` 中加入 `opencv-python-headless==4.9.0.80`。
+- 在 `Setup_Cloud_Env.sh` 中加入 `cv2` 导入兜底检测：
+  - 如果 `import cv2` 失败，自动安装 `opencv-python-headless==4.9.0.80`。
+  - 同时保持 `numpy>=1.23,<2.0`，避免 OpenCV 新版拉起 NumPy `2.x`。
+- 环境检查输出中增加 NumPy 版本。
+
+### Reason
+
+- 云平台容器中可能禁用 `apt-get` 或使用 `INSTALL_APT=0`，导致没有系统版 `python3-opencv`。
+- STGRU 数据准备、视频切帧、mask 处理都依赖 OpenCV，缺失 `cv2` 会直接阻塞环境验证和后续训练。
+
+### Result
+
+- `bash -n Setup_Cloud_Env.sh` 通过。
+- 后续云端重新运行环境脚本时会自动补齐 `cv2`。
+
+### Known Issues
+
+- 如果云平台禁止联网安装 pip 包，需要手动上传对应 wheel 或更换预装 OpenCV 的镜像。
