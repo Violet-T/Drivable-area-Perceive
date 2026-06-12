@@ -43,11 +43,16 @@ ssh <user>@<server_ip>
 
 ```bash
 nvidia-smi
+```
+
+如果云平台支持 Docker，可以继续检查：
+
+```bash
 docker --version
 docker run --rm --gpus all nvidia/cuda:12.1.1-runtime-ubuntu22.04 nvidia-smi
 ```
 
-如果最后一条失败，先安装 NVIDIA Container Toolkit，并重启 Docker。
+如果云平台本身已经提供容器环境，且不支持在容器内再次启动 Docker，则跳过 Docker 构建，直接使用第 4B 节。
 
 ## 3. 远程 clone 项目
 
@@ -66,7 +71,7 @@ cd perceive
 git clone https://github.com/Violet-T/Drivable-area-Perceive.git perceive
 ```
 
-## 4. 构建 Docker 镜像
+## 4A. 支持 Docker 时构建镜像
 
 ```bash
 docker build -t freespace_temporal:latest .
@@ -87,6 +92,92 @@ docker run --gpus all -it --rm \
 ```bash
 nvidia-smi
 python3 -c "import torch; print(torch.__version__, torch.cuda.is_available())"
+```
+
+## 4B. 云平台已是容器时直接建立环境
+
+很多算力平台已经把任务运行在容器里，不允许 Docker-in-Docker。此时不需要 `docker build`，但需要选择符合项目标准的容器模板：
+
+```text
+Ubuntu 22.04
+Python 3.10
+CUDA 12.1 / 12.2 runtime
+PyTorch 可为空，脚本会安装 2.2.0+cu121
+```
+
+如果平台当前模板是 `Python 3.12 + PyTorch 2.3`，请优先在平台镜像/框架选项里切换到 `Python 3.10`。本项目不再迁就 Python 3.12 环境。
+
+如果平台确实只提供 `Python 3.12 + PyTorch 2.3`，可以进入受限平台兼容模式先跑 smoke。该模式不是标准复现实验环境，只用于判断代码链路能否在该平台工作：
+
+```bash
+ALLOW_PYTHON_MISMATCH=1 \
+INSTALL_TORCH=0 \
+./Setup_Cloud_Env.sh
+```
+
+随后必须先跑小规模 smoke：
+
+```bash
+NUM_SCENES=5 \
+TRAIN_COUNT=3 \
+VAL_COUNT=1 \
+TEST_COUNT=1 \
+EPOCHS=1 \
+BATCH_SIZE=2 \
+./Run_BDD100K_STGRU.sh all
+```
+
+如果 smoke 通过，再继续正式训练；如果出现 PyTorch / torchvision / SEA-RAFT 兼容问题，仍需要更换到 Python 3.10 + PyTorch 2.2 环境。
+
+进入项目根目录后安装依赖：
+
+```bash
+cd ~/workspace/perceive
+chmod +x Setup_Cloud_Env.sh
+./Setup_Cloud_Env.sh
+```
+
+该脚本会安装：
+
+```text
+要求 Python 3.10
+PyTorch 2.2.0 + CUDA 12.1 wheel
+torchvision 0.17.0
+torchaudio 2.2.0
+OpenCV / NumPy / SciPy / tqdm / huggingface-hub 等项目依赖
+ffmpeg / libgl1 / libglib2.0-0 等基础系统依赖
+```
+
+如果云平台不允许 `apt-get`，但系统依赖已经预装，可以跳过 apt：
+
+```bash
+INSTALL_APT=0 ./Setup_Cloud_Env.sh
+```
+
+如果云平台 CUDA wheel 需要换源，例如使用 CUDA 11.8：
+
+```bash
+TORCH_INDEX_URL=https://download.pytorch.org/whl/cu118 ./Setup_Cloud_Env.sh
+```
+
+如果云平台里同时存在 Python 3.10 和 Python 3.12，请显式指定 Python 3.10：
+
+```bash
+PYTHON_BIN=python3.10 ./Setup_Cloud_Env.sh
+```
+
+如果平台不允许修改 PyTorch，但已经预装的是 `Python 3.10 + PyTorch 2.2 + CUDA 可用`，可以跳过 PyTorch 重装：
+
+```bash
+INSTALL_TORCH=0 ./Setup_Cloud_Env.sh
+```
+
+安装完成后检查：
+
+```bash
+nvidia-smi
+python3 -c "import torch; print(torch.__version__, torch.cuda.is_available())"
+python3 -c "import cv2; print(cv2.__version__)"
 ```
 
 ## 5. 准备权重与标签数据

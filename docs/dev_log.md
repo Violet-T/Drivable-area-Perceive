@@ -2410,3 +2410,116 @@
 
 - 当前环境没有安装 `git lfs`，权重将作为普通 Git 文件提交。
 - YOLOP 权重约 `92 MB`，SEA-RAFT 权重约 `76 MB`，低于 GitHub 单文件 `100 MB` 限制，但 push 时可能出现 large file warning。
+
+## 2026-06-12
+
+### Modified Module
+
+- Environment
+- Documentation
+
+### Changes
+
+- 新增 `Setup_Cloud_Env.sh`，用于云平台已经提供容器、但不支持 Docker-in-Docker 的情况。
+- 脚本默认适配云平台已有环境：
+  - Python `3.12`
+  - PyTorch `2.3`
+  - CUDA `12.1`
+- 新增 `INSTALL_TORCH` 控制：
+  - `auto`: 默认模式，已有可用 CUDA PyTorch 时不重装。
+  - `0`: 强制跳过 PyTorch 安装。
+  - `1`: 强制安装指定版本 PyTorch。
+- 默认 PyTorch 备用安装版本调整为：
+  - `torch==2.3.0`
+  - `torchvision==0.18.0`
+  - `torchaudio==2.3.0`
+  - CUDA wheel index: `cu121`
+- 更新 `docs/remote_training_ssh.md`：
+  - 增加 Docker 与非 Docker 两套云端部署路径。
+  - 说明 Python 3.12 / PyTorch 2.3 / CUDA 12.1 环境下推荐 `INSTALL_TORCH=0`。
+
+### Reason
+
+- 云平台本身已经运行在容器内，无法再次 build Docker。
+- Python 3.12 不适合强行安装旧版 PyTorch 2.2，因此需要复用平台提供的 PyTorch 2.3 环境。
+
+### Result
+
+- `bash -n Setup_Cloud_Env.sh` 通过。
+- 云平台部署流程调整为：
+  - `git clone`
+  - `INSTALL_TORCH=0 ./Setup_Cloud_Env.sh`
+  - 准备 `data/bdd100k_drivable_maps`
+  - 运行 `Run_BDD100K_STGRU.sh`
+
+### Known Issues
+
+- 如果云平台禁止 `apt-get`，需要使用 `INSTALL_APT=0`，并确保平台镜像已预装 `ffmpeg`、OpenCV 运行库和基础编译工具。
+
+## 2026-06-12
+
+### Modified Module
+
+- Environment
+- Documentation
+
+### Changes
+
+- 将云端非 Docker 环境脚本改回项目原始环境要求：
+  - Python `3.10`
+  - PyTorch `2.2.0`
+  - torchvision `0.17.0`
+  - torchaudio `2.2.0`
+  - CUDA wheel index `cu121`
+- `Setup_Cloud_Env.sh` 新增 Python 版本检查：
+  - 默认要求 `python3` 为 `3.10`。
+  - 如果云平台当前是 Python `3.12`，脚本会直接退出并提示切换云平台镜像/模板。
+  - 可通过 `PYTHON_BIN=python3.10` 指定 Python 3.10 可执行文件。
+- `INSTALL_TORCH` 默认改回 `1`，即按项目要求安装指定 PyTorch 版本。
+- 更新 `docs/remote_training_ssh.md`：
+  - 明确云平台应选择 Python 3.10 模板，而不是让项目适配 Python 3.12 / PyTorch 2.3。
+
+### Reason
+
+- 项目环境已经在 Dockerfile 中固定为 PyTorch 2.2 系列，并围绕 YOLOP、SEA-RAFT、STGRU 的兼容性进行调试。
+- 为减少远程训练中的不可控变量，云平台应适配项目标准环境，而不是反向修改项目依赖。
+
+### Result
+
+- 非 Docker 云平台部署路径与 Dockerfile 的核心 Python / PyTorch 版本重新对齐。
+
+### Known Issues
+
+- 若云平台只提供 Python 3.12 容器且无法切换镜像，则不能直接使用当前项目标准环境；需要更换云平台模板或申请 Python 3.10 镜像。
+
+## 2026-06-12
+
+### Modified Module
+
+- Environment
+- Documentation
+
+### Changes
+
+- 在 `Setup_Cloud_Env.sh` 中新增受限平台兼容开关：
+  - `ALLOW_PYTHON_MISMATCH=1`
+- 默认仍要求项目标准环境：
+  - Python `3.10`
+  - PyTorch `2.2.0`
+- 当云平台只能提供 `Python 3.12 + PyTorch 2.3` 时，可显式运行：
+  - `ALLOW_PYTHON_MISMATCH=1 INSTALL_TORCH=0 ./Setup_Cloud_Env.sh`
+- 更新 `docs/remote_training_ssh.md`，加入平台受限时的 smoke 验证流程。
+
+### Reason
+
+- 当前云平台只有 Python `3.12` 和 PyTorch `2.3`，无法完全按项目标准环境配置。
+- 为避免彻底阻塞远程训练，提供一个显式的兼容模式，但不把它标记为标准复现实验环境。
+
+### Result
+
+- 标准路径仍保持 Python `3.10` + PyTorch `2.2.0`。
+- 平台受限路径可以先安装项目其余依赖并执行小规模 smoke，验证 YOLOP、SEA-RAFT、STGRU 链路是否能在 PyTorch `2.3` 下工作。
+
+### Known Issues
+
+- 兼容模式未经完整正式训练验证；如果 smoke 或正式训练出现版本相关问题，需要切换云平台模板到 Python `3.10`。
