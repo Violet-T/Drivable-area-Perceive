@@ -2603,3 +2603,36 @@
 
 - 如果某个 split 缺少 `leftImg8bit_sequence`，且 `REQUIRE_SEQUENCE=1`，该 split 会跳过缺失样本。
 - Cityscapes 的关键帧标注稀疏，训练监督只发生在有 gtFine 的关键帧位置，不等价于完整视频逐帧监督。
+
+## 2026-06-12
+
+### Modified Module
+
+- BDD100K Dataset
+- STGRU Data Preparation
+
+### Changes
+
+- 新增 `src/utils/datasets/download_bdd100k_keyframes.py`。
+  - 从 BDD100K `images_100k` 压缩包中按 scene id 下载关键帧 image。
+  - 支持远程 zip Range 下载，也支持本地 `bdd100k_images_100k.zip`。
+  - 支持从 `scene-list`、BDD STGRU CSV、本地 drivable maps 中收集 scene id。
+- 新增 `src/utils/datasets/match_bdd100k_keyframes.py`。
+  - 将视频切出的 10s 附近帧与 BDD100K image keyframe 进行批量匹配。
+  - 使用灰度差异、HSV 直方图相关性、ORB 特征匹配的加权分数选择最佳帧。
+  - 将最佳匹配帧作为关键帧，并复制其前 5 帧作为 STGRU 输入片段。
+
+### Reason
+
+- BDD100K drivable-area 标签对应的是 image keyframe，而视频切帧可能存在时间戳/编码偏移。
+- 需要通过图像匹配找到视频帧中最接近官方关键帧的那一帧，避免监督标签和视频帧错位。
+
+### Result
+
+- 两个脚本均通过 Python 编译检查。
+- 两个脚本的 CLI help 输出正常。
+
+### Known Issues
+
+- 图像匹配是工程近似方法，若视频画面压缩严重或 keyframe 与视频并非同源，匹配分数可能下降。
+- 低分匹配需要人工抽查，可通过 `--min-score` 设置阈值过滤。
